@@ -1,6 +1,6 @@
 program main
-  use nclg, only: say_hello
+  use nclg
   implicit none
 
-  call say_hello()
+  print *, "stop"
 end program main
