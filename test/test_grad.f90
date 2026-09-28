@@ -63,6 +63,8 @@ implicit none
   call report(status, total, passed, failed, 8, residual)
 
   print *, passed, "/", total, " tests passed" 
+  ! A nonzero exit status tells the build system that a test failed.
+  if (failed > 0) error stop
 
   contains
     ! Compare the numerical gradient nclg::grad(func, point) with the

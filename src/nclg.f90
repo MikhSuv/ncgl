@@ -214,11 +214,12 @@ contains
       x_min = x_min + alpha * p
       g = grad(x_min, f)
       if (norm2(g) <= eps) return
-      beta = find_beta_pr(g_prev, g)
+      beta = find_beta_fr(g_prev, g)
       p = -1.0_dp * g + beta * p
       if (mod(i, restart) == 0) p = -1.0_dp * g
       if (dot_product(g_prev, g) > gamma * norm2(g)**2) p = -1.0_dp * g
     end do
+
 
   end function cg_min
 

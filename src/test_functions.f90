@@ -102,7 +102,7 @@ module test_functions
     function parabola_c37(x) result(y)
       real(dp), intent(in) :: x(:)
       real(dp) :: y
-      y = 0.5_dp * (x(1) - 3.7_dp)**2
+      y = 0.5_dp * (x(1) - 3.7_dp)**2 + 20.0_dp 
     end function parabola_c37
 
     ! Stretched quadratic f(x) = x1^2 + 10*x2^2 with the minimum at the origin.
@@ -163,5 +163,12 @@ module test_functions
       y(2) = 20.0_dp * x(2)
       y(3) = 100.0_dp * cos(5.0_dp * x(3))
     end function wavy_grad
+
+    function h(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y
+      
+      y = (1.0_dp - x(1))**2 + 100.0_dp * (x(2) - x(1)**2)**2 
+    end function h
 
 end module test_functions

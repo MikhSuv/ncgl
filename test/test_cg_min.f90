@@ -12,9 +12,9 @@ program test_cg_min
   ! Accuracy requested from the method. The numerical gradient of grad is
   ! accurate to about 1e-11, so this is a limit set by the tests and not by the
   ! precision of the gradient: the norm printed for every test is much smaller.
-  real(dp), parameter :: eps = 1.0e-6_dp
+  real(dp), parameter :: eps = 1.0e-9_dp
   ! Tolerance on the point found.
-  real(dp), parameter :: tol = 1.0e-6_dp
+  real(dp), parameter :: tol = 1.0e-9_dp
   integer :: total = 0
   integer :: failed = 0
   integer :: passed = 0
@@ -128,7 +128,12 @@ program test_cg_min
   status = test_downhill(wavy, [1.0_dp, 2.0_dp, 0.5_dp], eps, 4, 50, residual)
   call report(status, total, passed, failed, 20, residual, wavy)
 
+  status = test_downhill(h, [-1.2_dp, 1.0_dp], eps, 4, 50, residual)
+  call report(status, total, passed, failed, 21, residual, h)
+
   print *, passed, "/", total, " tests passed"
+  ! A nonzero exit status tells the build system that a test failed.
+  if (failed > 0) error stop
 
 contains
 
