@@ -12,7 +12,7 @@ implicit none
   ! analytic gradients.
   real(dp), parameter :: tol = 1.0e-5_dp
   ! Test point shared by all tests (overridden per test below).
-  real(dp), dimension(10) :: p 
+  real(dp), dimension(2) :: p 
   integer :: total = 0
   integer :: failed = 0
   integer :: passed = 0

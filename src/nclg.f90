@@ -4,8 +4,9 @@ module nclg
   implicit none
   private
 
-  public :: grad
+  public :: grad, find_alpha
 contains
+
    ! Compute the gradient of function func at point x0.
    ! Uses forward finite differences with step size delta_x = sqrt(machine epsilon).
    ! Arguments:
@@ -13,9 +14,9 @@ contains
    !   F    — multivariable function conforming to the multivariable_func interface
    ! Returns:
    !   g(n) — numerical approximation of the gradient
-  function grad(x0, func) result(g)
+  function grad(x0, f) result(g)
     real(dp), intent(in) :: x0(:)
-    procedure(multivariable_func) :: func
+    procedure(multivariable_func) :: f
     real(dp) :: g(size(x0))
     real(dp) :: x(size(x0))
     real(dp) :: f0
@@ -23,14 +24,142 @@ contains
     integer i, n
     
     n = size(x0)
-    f0 = func(x0)
+    f0 = f(x0)
     do i = 1, n
      x = x0 
      x(i) = x(i) + delta_x
-     g(i) = func(x) - f0
+     g(i) = f(x) - f0
     end do 
 
     g = g / delta_x
     
   end function grad
+
+  ! Find alpha >= 0 minimizing g(t) = f(x + t*p) over the ray t >= 0 with the
+  ! Armijo and Wolfe conditions. Two stages: the step is doubled until the
+  ! minimum is bracketed, then the bracket is narrowed by safeguarded quadratic
+  ! interpolation. Both stages are bounded, so the search always terminates.
+  ! Arguments:
+  !   x(:)  — point in R^n at which the search starts
+  !   p(:)  — search direction, a descent direction of f for x to be useful
+  !   eps   — narrowest bracket accepted by the zoom stage
+  !   f     — multivariable function conforming to the multivariable_func interface
+  ! Returns:
+  !   alpha — step length >= 0 satisfying the Armijo and Wolfe conditions, or the
+  !           point with the smallest g among those examined if there is no such step
+  function find_alpha(x, p, eps, f) result(alpha)
+    real(dp), intent(in) :: x(:)
+    real(dp), intent(in) :: p(size(x))
+    real(dp), intent(in) :: eps
+    procedure(multivariable_func) :: f
+
+    real(dp) :: alpha
+    ! Sufficient decrease (Armijo) and curvature (Wolfe) parameters.
+    real(dp), parameter :: c1 = 1.0e-4_dp
+    real(dp), parameter :: c2 = 0.1_dp
+    ! Factor the step grows by while the minimum is being bracketed.
+    real(dp), parameter :: grow = 2.0_dp
+    ! Longest step considered along the ray.
+    real(dp), parameter :: alpha_max = 1.0e+3_dp
+    integer, parameter :: max_iter = 50
+    real(dp) :: d0, d_t, d_lo
+    real(dp) :: f0, f_t, f_lo, f_hi
+    real(dp) :: t, t_lo, t_hi
+    logical  :: bracketed, found
+    integer  :: k
+
+    f0 = f(x)
+    d0 = dot_product(p, grad(x, f))
+    ! A direction that does not decrease f at x has no minimum to look for:
+    ! the empty step is the best admissible one.
+    if (d0 >= 0.0_dp) then
+      alpha = 0.0_dp
+      return
+    end if
+
+    ! A step of unit length in x-space keeps the search independent of the scale of p.
+    t = min(1.0_dp, 1.0_dp / sqrt(dot_product(p, p)))
+    ! Every accepted point is a new minimum of g, so t_lo always keeps the best
+    ! point seen so far together with the slope of g there.
+    t_lo = 0.0_dp
+    f_lo = f0
+    d_lo = d0
+    f_hi = f0
+    bracketed = .false.
+    found = .false.
+
+    ! Bracket the minimum by doubling the step while g keeps decreasing.
+    do k = 1, max_iter
+      f_t = f(x + t * p)
+      if (f_t > f0 + c1 * t * d0 .or. f_t >= f_lo) then
+        t_hi = t
+        f_hi = f_t
+        bracketed = .true.
+        exit
+      end if
+      d_t = dot_product(p, grad(x + t * p, f))
+      t_lo = t
+      f_lo = f_t
+      d_lo = d_t
+      if (abs(d_t) <= -c2 * d0) then
+        alpha = t
+        found = .true.
+        exit
+      end if
+      ! The ray has no minimum within the steps allowed: t_lo is the best of them.
+      if (t >= alpha_max) exit
+      t = min(grow * t, alpha_max)
+    end do
+
+    ! Zoom: every trial point is compared with the best one, which is never
+    ! dropped from the bracket.
+    if (bracketed .and. .not. found) then
+      do k = 1, max_iter
+        t = min_quadratic(t_lo, f_lo, d_lo, t_hi, f_hi)
+        f_t = f(x + t * p)
+        if (f_t > f0 + c1 * t * d0 .or. f_t >= f_lo) then
+          t_hi = t
+        else
+          d_t = dot_product(p, grad(x + t * p, f))
+          if (abs(d_t) <= -c2 * d0) then
+            alpha = t
+            found = .true.
+            exit
+          end if
+          ! g'(t) turned positive: the minimum is on the other side of t_lo now.
+          if (d_t * (t_hi - t_lo) >= 0.0_dp) t_hi = t_lo
+          t_lo = t
+          f_lo = f_t
+          d_lo = d_t
+        end if
+        if (abs(t_hi - t_lo) <= eps) exit
+      end do
+    end if
+
+    ! No step satisfies the Wolfe conditions: keep the point with the smallest g.
+    if (.not. found) alpha = t_lo
+
+  end function find_alpha
+
+  ! Argument of the minimum of the quadratic passing through (t_a, f_a) with
+  ! slope d_a at t_a and through (t_b, f_b). The midpoint of the two points is
+  ! returned when the fit is not convex or its minimum falls outside the
+  ! safeguarded part of the interval, which keeps the zoom stage bracketed.
+  function min_quadratic(t_a, f_a, d_a, t_b, f_b) result(t)
+    real(dp), intent(in) :: t_a, f_a, d_a, t_b, f_b
+    real(dp) :: t
+    real(dp), parameter :: safeguard = 0.1_dp
+    real(dp) :: dt, c, lo, hi, t_try
+
+    dt = t_b - t_a
+    t = 0.5_dp * (t_a + t_b)
+    c = 0.0_dp
+    if (dt /= 0.0_dp) c = (f_b - f_a - d_a * dt) / (dt * dt)
+    lo = min(t_a, t_b) + safeguard * abs(dt)
+    hi = max(t_a, t_b) - safeguard * abs(dt)
+    if (c > 0.0_dp) then
+      t_try = t_a - 0.5_dp * d_a / c
+      if (t_try > lo .and. t_try < hi) t = t_try
+    end if
+  end function min_quadratic
 end module nclg
