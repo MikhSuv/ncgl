@@ -4,7 +4,7 @@ module nclg
   implicit none
   private
 
-  public :: grad, find_alpha
+  public :: grad, find_alpha, cg_min
 contains
 
    ! Compute the gradient of function func at point x0.
@@ -140,6 +140,88 @@ contains
     if (.not. found) alpha = t_lo
 
   end function find_alpha
+
+  ! Fletcher-Reeves coefficient beta = (g·g)/(g_prev·g_prev).
+  ! Arguments:
+  !   g_prev(:) — gradient at the previous iterate
+  !   g(:)     — gradient at the current iterate
+  ! Returns:
+  !   beta — coefficient of the previous search direction
+  function find_beta_fr(g_prev, g) result(beta)
+   real(dp), intent(in) :: g_prev(:)
+   real(dp), intent(in) :: g(:)
+   real(dp) :: beta
+
+   beta = dot_product(g, g) / dot_product(g_prev, g_prev)
+
+  end function find_beta_fr
+
+  ! Polak-Ribiere coefficient beta = (g·(g - g_prev))/(g_prev·g_prev).
+  ! Arguments:
+  !   g_prev(:) — gradient at the previous iterate
+  !   g(:)     — gradient at the current iterate
+  ! Returns:
+  !   beta — coefficient of the previous search direction
+  function find_beta_pr(g_prev, g) result(beta)
+   real(dp), intent(in) :: g_prev(:)
+   real(dp), intent(in) :: g(:)
+   real(dp) :: beta
+
+   beta = dot_product(g, g - g_prev) / dot_product(g_prev, g_prev)
+
+  end function find_beta_pr
+
+  ! Minimize f with the conjugate gradient method.
+  ! Starting from x0 the search direction is p = -g, then it is updated with
+  ! p = -g + beta*p using the Polak-Ribiere coefficient. The memory of the
+  ! previous direction is dropped every m iterations and whenever the new
+  ! gradient no longer decreases f enough, that is when g·g_prev > gamma*|g|^2.
+  ! Arguments:
+  !   f           — multivariable function conforming to the multivariable_func interface
+  !   x0(:)       — starting point in R^n
+  !   eps         — required accuracy, the iteration stops at |grad f(x)| <= eps
+  !   m           — restart period, the default is n + 1 iterations
+  !   max_iter    — iteration limit, the default is 1000
+  ! Returns:
+  !   x_min — point with the smallest f reached; the last one if the iteration
+  !           limit is reached before the required accuracy
+  function cg_min(f, x0, eps, m, max_iter) result(x_min)
+    procedure(multivariable_func) :: f
+    real(dp), intent(in) :: x0(:)
+    real(dp), intent(in) :: eps
+    integer, intent(in), optional :: m
+    integer, intent(in), optional :: max_iter
+
+    real(dp) :: x_min(size(x0))
+    real(dp) :: g(size(x0)), g_prev(size(x0)), p(size(x0))
+    real(dp) :: alpha, beta
+    ! Restart on a direction that stops decreasing f enough.
+    real(dp), parameter :: gamma = 0.2_dp
+    integer :: i, iter_max, restart
+
+    iter_max = 1000000
+    restart = size(x0) + 1
+    if (present(max_iter)) iter_max = max_iter
+    if (present(m)) restart = max(m, 10)
+
+    x_min = x0
+    g = grad(x0, f)
+    p = -1.0_dp * g
+
+    do i = 1, iter_max
+      if (norm2(g) < eps) return
+      g_prev = g
+      alpha = find_alpha(x_min, p, eps, f)
+      x_min = x_min + alpha * p
+      g = grad(x_min, f)
+      if (norm2(g) <= eps) return
+      beta = find_beta_pr(g_prev, g)
+      p = -1.0_dp * g + beta * p
+      if (mod(i, restart) == 0) p = -1.0_dp * g
+      if (dot_product(g_prev, g) > gamma * norm2(g)**2) p = -1.0_dp * g
+    end do
+
+  end function cg_min
 
   ! Argument of the minimum of the quadratic passing through (t_a, f_a) with
   ! slope d_a at t_a and through (t_b, f_b). The midpoint of the two points is
