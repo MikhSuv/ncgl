@@ -1,9 +1,9 @@
-! Module providing a collection of test functions F: R^n -> R together with
-! their analytic gradients. These are used to validate the numerical gradient
-! routine by comparing numeric and analytic results.
-! Every function comes in a pair: F conforms to the multivariable_func interface
-! and its gradient to the gradient interface, with the analytic gradient given
-! in the comment of the function itself.
+! Module providing a collection of test functions F: R^n -> R, some of them
+! together with their analytic gradients. The functions are used to check the
+! numerical gradient of nclg::grad and the search for a minimum performed by
+! nclg::cg_min.
+! A function comes with a gradient only when a test compares the two; the
+! analytic gradient is given in the comment of the function itself.
 module test_functions
   use precision_mod
   
@@ -72,21 +72,6 @@ module test_functions
       y = exp(x)
     end function exponential_grad
 
-    ! Logarithm function f(x) = sum_i ln(x_i). Only defined for x_i > 0.
-    ! Analytic gradient: grad f(x) = 1/x.
-    function logarithm(x) result(y)
-      real(dp), intent(in) :: x(:)
-      real(dp) :: y
-      y = sum(log(x))
-    end function logarithm
-    
-    ! Analytic gradient of logarithm, defined for x_i > 0 only.
-    function logarithm_grad(x) result(y)
-      real(dp), intent(in) :: x(:)
-      real(dp) :: y(size(x))
-      y = 1.0_dp/x
-    end function logarithm_grad
-
     ! Sinus function f(x) = sum_i sin(x_i).
     ! Analytic gradient: grad f(x) = cos(x).
     function sinus(x) result(y)
@@ -102,28 +87,81 @@ module test_functions
       y = cos(x)
     end function sinus_grad
  
-    ! 1D shifted parabola f(x) = (x(1) - c)^2 / 2 with minimum at x(1) = c.
-    ! Used to test find_alpha: along direction p=[1], g(t) = (t-c)^2/2
-    ! has its minimum at alpha = c.
-    ! c = 0.3: minimum inside the initial bracket [0,1].
+    ! 1D shifted parabola f(x) = (x(1) - c)^2 / 2 with the minimum at x(1) = c.
+    ! Used to test the search for a minimum in one dimension, where the method
+    ! follows the only direction available.
+    ! c = 0.3: minimum near the starting point x(1) = 0.
     function parabola_c03(x) result(y)
       real(dp), intent(in) :: x(:)
       real(dp) :: y
       y = 0.5_dp * (x(1) - 0.3_dp)**2
     end function parabola_c03
 
-    ! c = 1.0: minimum exactly at the right edge of the initial bracket.
-    function parabola_c10(x) result(y)
-      real(dp), intent(in) :: x(:)
-      real(dp) :: y
-      y = 0.5_dp * (x(1) - 1.0_dp)**2
-    end function parabola_c10
-
-    ! c = 3.7: minimum beyond the initial bracket, requires the step to grow.
+    ! c = 3.7: minimum far from the starting point x(1) = 0, so the line search
+    ! has to grow the step several times to reach it.
     function parabola_c37(x) result(y)
       real(dp), intent(in) :: x(:)
       real(dp) :: y
       y = 0.5_dp * (x(1) - 3.7_dp)**2
     end function parabola_c37
- 
+
+    ! Stretched quadratic f(x) = x1^2 + 10*x2^2 with the minimum at the origin.
+    ! Its condition number is 10, so the iterates of the conjugate method and of
+    ! steep descent differ by orders of magnitude within ten iterations.
+    ! Analytic gradient: grad f(x) = (2*x1, 20*x2).
+    function quadratic_k10(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y
+      y = x(1)**2 + 10.0_dp * x(2)**2
+    end function quadratic_k10
+
+    ! Analytic gradient of quadratic_k10. Components beyond the second are zero
+    ! because f does not depend on them.
+    function quadratic_k10_grad(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y(size(x))
+      y = 0.0_dp
+      y(1) = 2.0_dp * x(1)
+      y(2) = 20.0_dp * x(2)
+    end function quadratic_k10_grad
+
+    ! Stretched quadratic f(x) = x1^2 + 10*x2^2 + 100*x3^2, condition number 100.
+    ! Analytic gradient: grad f(x) = (2*x1, 20*x2, 200*x3).
+    function quadratic_k100(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y
+      y = x(1)**2 + 10.0_dp * x(2)**2 + 100.0_dp * x(3)**2
+    end function quadratic_k100
+
+    ! Analytic gradient of quadratic_k100.
+    function quadratic_k100_grad(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y(size(x))
+      y = 0.0_dp
+      y(1) = 2.0_dp * x(1)
+      y(2) = 20.0_dp * x(2)
+      y(3) = 200.0_dp * x(3)
+    end function quadratic_k100_grad
+
+    ! Bounded below but nonconvex f(x) = x1^2 + 10*x2^2 + 50*sin(10*x1) + 20*sin(5*x3).
+    ! The oscillations make the conjugate direction leave the cone of descent, so
+    ! the restart on a bad direction is taken repeatedly here.
+    ! Analytic gradient: grad f(x) = (2*x1 + 500*cos(10*x1), 20*x2, 100*cos(5*x3)).
+    function wavy(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y
+      y = x(1)**2 + 10.0_dp * x(2)**2 + 50.0_dp * sin(10.0_dp * x(1)) &
+          + 20.0_dp * sin(5.0_dp * x(3))
+    end function wavy
+
+    ! Analytic gradient of wavy.
+    function wavy_grad(x) result(y)
+      real(dp), intent(in) :: x(:)
+      real(dp) :: y(size(x))
+      y = 0.0_dp
+      y(1) = 2.0_dp * x(1) + 500.0_dp * cos(10.0_dp * x(1))
+      y(2) = 20.0_dp * x(2)
+      y(3) = 100.0_dp * cos(5.0_dp * x(3))
+    end function wavy_grad
+
 end module test_functions

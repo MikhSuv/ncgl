@@ -7,32 +7,31 @@ module nclg
   public :: grad, find_alpha, cg_min
 contains
 
-   ! Compute the gradient of function func at point x0.
-   ! Uses forward finite differences with step size delta_x = sqrt(machine epsilon).
-   ! Arguments:
-   !   x0(:) — point in R^n at which to evaluate the gradient
-   !   F    — multivariable function conforming to the multivariable_func interface
-   ! Returns:
-   !   g(n) — numerical approximation of the gradient
+  ! Compute the gradient of function func at point x0.
+  ! Uses central finite differences with step size delta_x = eps^(1/3), which
+  ! balances the truncation error against the rounding error of f.
+  ! Arguments:
+  !   x0(:) — point in R^n at which to evaluate the gradient
+  !   f     — multivariable function conforming to the multivariable_func interface
+  ! Returns:
+  !   g(n)  — numerical approximation of the gradient
   function grad(x0, f) result(g)
     real(dp), intent(in) :: x0(:)
     procedure(multivariable_func) :: f
     real(dp) :: g(size(x0))
-    real(dp) :: x(size(x0))
+    real(dp) :: x(size(x0)), x_(size(x0))
     real(dp) :: f0
-    real(dp), parameter :: delta_x = sqrt(epsilon(1.0_dp))
+    real(dp), parameter :: delta_x = epsilon(1.0_dp)**(1.0_dp/3.0_dp)
     integer i, n
-    
     n = size(x0)
-    f0 = f(x0)
-    do i = 1, n
-     x = x0 
-     x(i) = x(i) + delta_x
-     g(i) = f(x) - f0
-    end do 
-
-    g = g / delta_x
-    
+    do i = 1,n
+      x = x0
+      x_ = x0
+      x(i) = x(i) + delta_x
+      x_(i) = x_(i) - delta_x
+      g(i) = f(x) - f(x_)
+    end do
+    g = 0.5_dp * g/delta_x
   end function grad
 
   ! Find alpha >= 0 minimizing g(t) = f(x + t*p) over the ray t >= 0 with the
